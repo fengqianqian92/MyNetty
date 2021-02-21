@@ -1,8 +1,11 @@
 package com.qiafeng.systemio;
 
+import io.netty.bootstrap.Bootstrap;
+import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.*;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.ServerSocketChannel;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
@@ -10,6 +13,7 @@ import io.netty.util.CharsetUtil;
 import org.junit.Test;
 
 import java.net.InetSocketAddress;
+import java.net.Socket;
 
 public class MyNetty {
     @Test
@@ -106,7 +110,52 @@ public class MyNetty {
         System.out.println("server close");
     }
 
+    @Test
+    public void nettyClient() throws InterruptedException {
+        NioEventLoopGroup group = new NioEventLoopGroup(1);
+        Bootstrap bs = new Bootstrap();
+        ChannelFuture connect = bs.group(group)
+                .channel(NioSocketChannel.class)
+//                .handler(new ChannelInit())
+                .handler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel socketChannel) throws Exception {
+                        ChannelPipeline p = socketChannel.pipeline();
+                        p.addLast(new MyInHandler());
+                    }
+                })
+                .connect("localhost", 9999);
+
+        Channel client = connect.sync().channel();
+
+        ByteBuf buf = Unpooled.copiedBuffer("Hello server".getBytes());
+        ChannelFuture send = client.writeAndFlush(buf);
+        send.sync();
+
+        client.closeFuture().sync();
+    }
+
+    @Test
+    public void nettyServer() throws InterruptedException {
+        NioEventLoopGroup group = new NioEventLoopGroup(1);
+        ServerBootstrap bs = new ServerBootstrap();
+        ChannelFuture bind = bs.group(group, group)
+                .channel(NioServerSocketChannel.class)
+//                .childHandler(new ChannelInit())
+                .childHandler(new ChannelInitializer<NioSocketChannel>() {
+                    @Override
+                    protected void initChannel(NioSocketChannel ch) throws Exception {
+                        ChannelPipeline p = ch.pipeline();
+                        p.addLast(new MyInHandler());
+                    }
+                })
+                .bind(new InetSocketAddress("localhost", 8888));
+        bind.sync().channel().closeFuture().sync();
+    }
+
 }
+
+
 
 /*
 Very important
@@ -116,7 +165,7 @@ Very important
 class ChannelInit extends ChannelInboundHandlerAdapter {
     @Override
     public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
-        Channel client = ctx.channel(); 
+        Channel client = ctx.channel();
         ChannelPipeline p = client.pipeline();
         p.addLast(new MyInHandler());//3.Add MyInHandler
         ctx.pipeline().remove(this);//4.remove current handler
